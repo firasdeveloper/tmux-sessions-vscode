@@ -9,6 +9,7 @@ The point of tmux here: **a session keeps running when you close its terminal ta
 ## What you get
 
 - **A list of sessions** with a live dot: filled green while a session is printing output, a bell when it rang the terminal bell, a hollow circle when it is quiet. A count of sessions that rang the bell shows on the sidebar icon.
+- **A list that stays put.** Sessions are listed in the order they were created. Nothing jumps around when one becomes busy or is renamed.
 - **Click to open** a session as a terminal tab. Click again and the same tab comes to the front.
 - **New Session Here** (the `+` button) starts a session in the folder you have open: a plain shell, or with a command of your choice already running in it.
 - **Rename** and **Kill** from the right-click menu.
@@ -19,12 +20,12 @@ No account, no network connection, no telemetry. The extension only runs the `tm
 ## Requirements
 
 - macOS or Linux (also WSL and Remote-SSH: the extension runs where your folder is).
-- tmux 3.0 or newer: `brew install tmux` or `sudo apt install tmux`.
+- tmux: `brew install tmux` or `sudo apt install tmux`. Developed and tested with tmux 3.7. Older versions are expected to work but have not been tested.
 - VS Code 1.90 or newer.
 
 ## Install
 
-1. Download `tmux-sessions-<version>.vsix` from the [Releases](../../releases) page.
+1. Download `tmux-sessions-<version>.vsix` from the [Releases](https://github.com/firasdeveloper/tmux-sessions-vscode/releases) page.
 2. In VS Code: Extensions view → `...` menu → **Install from VSIX...**, or run `code --install-extension tmux-sessions-<version>.vsix`.
 3. Click the new **tmux Sessions** icon in the activity bar.
 
@@ -62,6 +63,7 @@ Example, offering your own tools:
 | Rename or kill | Right-click the session |
 | Reach it from a plain terminal | `tmux -L vscode attach -t <name>` |
 | Scroll back | Mouse wheel (tmux's own history, kept while the session lives) |
+| Select text or click a link | Hold Shift (Option on macOS) while you drag or click: the mouse otherwise belongs to tmux |
 
 All commands are also in the Command Palette under **tmux Sessions**.
 
@@ -72,9 +74,10 @@ Short version: the terminal tab *is* tmux, attached to the session. Closing the 
 ## Limits worth knowing
 
 - The green dot means "printed something in the last 10 seconds". A program that redraws constantly (a clock in a prompt, `top`) always looks busy.
-- The bell icon depends on the program ringing the terminal bell. Many AI tools can do that when they finish or need input; check their settings.
+- The bell icon depends on the program ringing the terminal bell. Many AI tools can do that when they finish or need input; check their settings. tmux only flags a bell for a session that is **not open in a terminal tab** at that moment: if the tab is open, tmux considers the bell delivered.
+- While the sidebar is hidden the count on its icon is refreshed every 30 seconds, not every few seconds.
 - The list shows a session's active window. Sessions with several tmux windows work, but only the active one is described.
-- Session names: letters, numbers, dashes and underscores. Sessions with other names are not listed.
+- Session names: letters, numbers, dashes and underscores, not starting with a dash. Sessions with other names are not listed; the sidebar says how many are left out.
 - Windows without WSL is not supported (tmux does not run there).
 
 ## Development

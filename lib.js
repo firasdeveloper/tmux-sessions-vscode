@@ -3,12 +3,13 @@
 // Everything that reaches tmux is built here as an argument array. Nothing is ever a shell string.
 
 /** Session names this extension shows and creates. tmux itself forbids "." and ":" in names. */
-const NAME = /^[A-Za-z0-9_-]{1,48}$/;
+const NAME = /^[A-Za-z0-9_][A-Za-z0-9_-]{0,47}$/;   // never a leading dash: tmux would read it as an option
 /** A session counts as "working" when it printed something in the last few seconds. */
 const WORKING_SECONDS = 10;
 const DEFAULT_SOCKET = 'vscode';
 // session_id ("$3") is tmux's own number for a session. It never changes, also not when the session is renamed.
-const FIELDS = ['#{session_id}', '#{session_name}', '#{session_attached}', '#{pane_current_command}', '#{pane_current_path}', '#{window_activity}', '#{window_bell_flag}'];
+// The two free-text fields (program and folder) come last, so odd characters in them cannot shift the others.
+const FIELDS = ['#{session_id}', '#{session_name}', '#{session_attached}', '#{window_activity}', '#{window_bell_flag}', '#{pane_current_command}', '#{pane_current_path}'];
 
 /** What "New session" offers when the user has set nothing. `command` is typed into the new session ('' = plain shell). */
 const DEFAULT_COMMANDS = [
@@ -22,7 +23,22 @@ function socketName(setting) {
   if (setting === '') return '';
   return typeof setting === 'string' && /^[A-Za-z0-9_-]{1,32}$/.test(setting) ? setting : DEFAULT_SOCKET;
 }
-const base = socket => (socket ? ['-L', socket] : []);
+// -u: tmux output is UTF-8 whatever the locale (otherwise it prints the tab separators as "_" in a non-UTF-8 one).
+// Deliberately no -N ("never start a server"): it only exists since tmux 3.2, and only new-session starts a server anyway.
+const base = socket => ['-u', ...(socket ? ['-L', socket] : [])];
+
+/** A random marker for one `list-sessions` call. Every real row starts with it, so text that a folder or program
+ *  name smuggles into the output (a newline followed by a made-up row) is ignored: it cannot know the marker. */
+const newToken = () => require('node:crypto').randomBytes(12).toString('hex');
+
+/** The environment for tmux. The first session starts the tmux server, and every shell in it inherits the server's
+ *  variables, so the editor's private ones (which change how programs started from that shell behave) are left out,
+ *  as is any trace of an outer tmux. No locale is forced. */
+function cleanEnv(env) {
+  const out = {};
+  for (const [k, v] of Object.entries(env || {})) if (v !== undefined && !/^(ELECTRON_|VSCODE_)/.test(k) && k !== 'TMUX' && k !== 'TMUX_PANE') out[k] = v;
+  return out;
+}
 
 /** The "New session" choices from the user's setting; anything malformed is dropped, and an empty result falls back to the defaults. */
 function commandsFrom(setting) {
@@ -46,17 +62,22 @@ const stateOf = (bell, windowActivity, nowSec) =>
   : Number.isFinite(windowActivity) && nowSec - windowActivity <= WORKING_SECONDS ? 'working'
   : 'quiet';
 
-/** Parse `tmux list-sessions` output (see listArgs) into sessions sorted by name. Odd names are skipped. */
-function parseSessions(out, nowSec) {
-  const sessions = [];
+const plain = v => String(v).replace(/[\x00-\x1f\x7f]+/g, ' ').trim();
+/** Parse `tmux list-sessions` output (see listArgs) into sessions, oldest first: tmux numbers sessions as they are
+ *  created, so the list keeps its order whatever is busy or renamed. Rows without this call's token are ignored;
+ *  sessions that exist but have a name this extension does not handle are counted in `.hidden`. */
+function parseSessions(out, nowSec, token) {
+  const sessions = []; let hidden = 0;
   for (const line of String(out).split('\n')) {
-    if (!line) continue;
-    const [id = '', name = '', attached = '0', command = '', dir = '', winAct = '', bell = ''] = line.split('\t');
-    if (!/^\$\d+$/.test(id) || !NAME.test(name)) continue;
+    const [tok, id = '', name = '', attached = '0', winAct = '', bell = '', command = '', ...dir] = line.split('\t');
+    if (!token || tok !== token || !/^\$\d+$/.test(id)) continue;
+    if (!NAME.test(name)) { hidden++; continue; }
     const wa = winAct.trim() === '' ? NaN : Number(winAct);
-    sessions.push({ id, name, attached: Number(attached) || 0, command: commandName(command), dir, state: stateOf(bell, wa, nowSec) });
+    sessions.push({ id, name, attached: Number(attached) || 0, command: commandName(plain(command)), dir: plain(dir.join('\t')), state: stateOf(bell, wa, nowSec) });
   }
-  return sessions.sort((a, b) => a.name.localeCompare(b.name, 'en', { numeric: true }));
+  sessions.sort((a, b) => Number(a.id.slice(1)) - Number(b.id.slice(1)));
+  sessions.hidden = hidden;
+  return sessions;
 }
 
 /** The grey text after a session's name: what runs in it and the folder it is in. */
@@ -82,20 +103,22 @@ function uniqueName(wanted, existing) {
 
 const checked = name => { if (!NAME.test(name)) throw new Error('bad session name'); return name; };
 
-// -N: never start a tmux server as a side effect. Only createArgs may start one, because the first session needs it.
-const listArgs = socket => [...base(socket), '-N', 'list-sessions', '-F', FIELDS.join('\t')];
+// Only createArgs can start a tmux server (tmux starts one for new-session, and for no other command used here).
+const listArgs = (socket, token) => [...base(socket), 'list-sessions', '-F', [token, ...FIELDS].join('\t')];
 // The "=" pins the exact session name; without it tmux would also match a name that merely starts the same.
-const attachArgs = (socket, name) => [...base(socket), '-N', 'attach-session', '-t', '=' + checked(name)];
+const attachArgs = (socket, name) => [...base(socket), 'attach-session', '-t', '=' + checked(name)];
 // The folder is deliberately NOT an argument: tmux expands "#{...}" and "#(command)" in `new-session -c`, so a folder
 // name could be read as a format. The caller runs this with the folder as its working directory, which tmux uses as is.
 const createArgs = (socket, name) => [...base(socket), 'new-session', '-d', '-s', checked(name)];
 /** Per-session look, never global: VS Code already shows the name on the tab, and the mouse wheel should scroll the history. */
-const lookArgs = (socket, name, hideStatus) => [...base(socket), '-N', 'set-option', '-t', '=' + checked(name) + ':', 'mouse', 'on',
+const lookArgs = (socket, name, hideStatus) => [...base(socket), 'set-option', '-t', '=' + checked(name) + ':', 'mouse', 'on',
   ...(hideStatus ? [';', 'set-option', '-t', '=' + name + ':', 'status', 'off'] : [])];
-const typeArgs = (socket, name, text) => [...base(socket), '-N', 'send-keys', '-t', '=' + checked(name) + ':', '-l', text];
-const enterArgs = (socket, name) => [...base(socket), '-N', 'send-keys', '-t', '=' + checked(name) + ':', 'Enter'];
-const renameArgs = (socket, name, to) => [...base(socket), '-N', 'rename-session', '-t', '=' + checked(name), checked(to)];
-const killArgs = (socket, name) => [...base(socket), '-N', 'kill-session', '-t', '=' + checked(name)];
+// "--" so text starting with a dash is not read as an option; a trailing ";" is escaped because tmux would take it as
+// its own command separator and drop it.
+const typeArgs = (socket, name, text) => [...base(socket), 'send-keys', '-t', '=' + checked(name) + ':', '-l', '--', text.replace(/;$/, '\\;')];
+const enterArgs = (socket, name) => [...base(socket), 'send-keys', '-t', '=' + checked(name) + ':', 'Enter'];
+const renameArgs = (socket, name, to) => [...base(socket), 'rename-session', '-t', '=' + checked(name), '--', checked(to)];
+const killArgs = (socket, name) => [...base(socket), 'kill-session', '-t', '=' + checked(name)];
 
 /** The tmux program: the user's own setting if it is an existing absolute path, else the usual install places, else PATH. */
 function pickTmux(userSetting, exists) {
@@ -103,5 +126,5 @@ function pickTmux(userSetting, exists) {
   return ['/opt/homebrew/bin/tmux', '/usr/local/bin/tmux', '/usr/bin/tmux', '/bin/tmux', '/home/linuxbrew/.linuxbrew/bin/tmux'].find(exists) || 'tmux';
 }
 
-module.exports = { NAME, WORKING_SECONDS, DEFAULT_SOCKET, DEFAULT_COMMANDS, socketName, commandsFrom, commandName, stateOf, parseSessions, describe,
+module.exports = { newToken, cleanEnv, NAME, WORKING_SECONDS, DEFAULT_SOCKET, DEFAULT_COMMANDS, socketName, commandsFrom, commandName, stateOf, parseSessions, describe,
   cleanName, uniqueName, listArgs, attachArgs, createArgs, lookArgs, typeArgs, enterArgs, renameArgs, killArgs, pickTmux };

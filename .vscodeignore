@@ -1,3 +1,4 @@
 test/**
+docs/sidebar.svg
 .gitignore
 *.vsix

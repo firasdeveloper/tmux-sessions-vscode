@@ -16,22 +16,26 @@ const ICON = { attention: ['bell-dot', 'list.warningForeground'], working: ['cir
 const userSetting = key => { const i = vscode.workspace.getConfiguration('tmuxSessions').inspect(key); return i ? i.globalValue : undefined; };
 const tmuxPath = () => L.pickTmux(userSetting('tmuxPath'), p => { try { return fs.statSync(p).isFile(); } catch { return false; } });
 const socket = () => L.socketName(userSetting('socketName'));
-// LC_ALL: without a UTF-8 locale tmux prints the tab separators of the list as "_".
-const run = (args, cwd) => new Promise(resolve => execFile(tmuxPath(), args, { timeout: 8000, cwd, env: { ...process.env, LC_ALL: 'en_US.UTF-8' } },
+// The environment is cleaned because the first session starts the tmux server, and every shell in it inherits these variables.
+const run = (args, cwd) => new Promise(resolve => execFile(tmuxPath(), args, { timeout: 8000, cwd, env: L.cleanEnv(process.env) },
   (err, out, errOut) => resolve({ ok: !err, missing: !!err && err.code === 'ENOENT', out: String(out || ''), err: String(errOut || '') })));
 
 class Sessions {
   constructor() { this.changed = new vscode.EventEmitter(); this.onDidChangeTreeData = this.changed.event; this.items = []; }
   async refresh() {
-    const r = await run(L.listArgs(socket()));   // fails when no server runs yet: that simply means no sessions
-    this.items = r.ok ? L.parseSessions(r.out, Date.now() / 1000) : [];
+    const token = L.newToken(), r = await run(L.listArgs(socket(), token));
+    this.items = r.ok ? L.parseSessions(r.out, Date.now() / 1000, token) : [];
+    this.hidden = r.ok ? this.items.hidden : 0;
+    // No server yet simply means no sessions. Any other failure is shown, not passed off as an empty list.
+    const noServer = /no server running|error connecting|no sessions|No such file or directory/i.test(r.err);
+    this.error = r.ok || r.missing || noServer ? '' : (r.err.trim().split('\n')[0] || 'tmux did not answer').slice(0, 200);
     vscode.commands.executeCommand('setContext', 'tmuxSessions.state', r.missing ? 'notmux' : this.items.length ? 'ok' : 'empty');
     this.changed.fire();
   }
   getChildren() { return this.items; }
   getTreeItem(s) {
     const item = new vscode.TreeItem(s.name, vscode.TreeItemCollapsibleState.None);
-    item.id = s.name; item.contextValue = 'session'; item.description = L.describe(s);
+    item.id = s.id; item.contextValue = 'session'; item.description = L.describe(s);
     item.tooltip = `${s.name}\n${s.dir}\n${s.attached ? 'open in a terminal' : 'not open anywhere'} · ${s.state}`;
     const [icon, color] = ICON[s.state] || ICON.quiet;
     item.iconPath = new vscode.ThemeIcon(icon, new vscode.ThemeColor(color));
@@ -41,20 +45,23 @@ class Sessions {
 }
 
 function activate(context) {
-  // Open terminals are remembered by tmux's session id, not by name: the id survives a rename, also one made outside VS Code.
-  const sessions = new Sessions(), terminals = new Map();   // session id -> its VS Code terminal
+  // Open terminals are remembered by tmux's session id, not by name: the id survives a rename, also one made outside
+  // VS Code. The socket is part of the key, because every tmux server numbers its sessions from $0.
+  const sessions = new Sessions(), terminals = new Map();   // "<socket> <session id>" -> its VS Code terminal
+  const keyOf = s => `${socket()} ${s.id}`;
   const view = vscode.window.createTreeView('tmuxSessions.list', { treeDataProvider: sessions });
   const refresh = async () => {
     await sessions.refresh();
-    const n = sessions.items.filter(s => s.state === 'attention').length;   // a count on the sidebar icon, visible from any view
+    const n = sessions.items.filter(s => s.state === 'attention').length;   // a count on the sidebar icon
     view.badge = n ? { value: n, tooltip: `${n} session${n > 1 ? 's' : ''} rang the bell` } : undefined;
+    const h = sessions.hidden;
+    view.message = sessions.error ? `tmux: ${sessions.error}` : h ? `${h} session${h > 1 ? 's are' : ' is'} not shown (names with characters other than letters, numbers, - and _).` : undefined;
   };
   let timer = null;
-  const poll = () => {   // refresh only while the list is on screen
-    clearInterval(timer); timer = null;
-    if (!view.visible) return;
+  const poll = () => {   // often while the list is on screen; slowly while it is hidden, only to keep the count on the icon right
+    clearInterval(timer);
     const every = Math.min(60, Math.max(2, Number(vscode.workspace.getConfiguration('tmuxSessions').get('refreshSeconds')) || 5));
-    refresh(); timer = setInterval(refresh, every * 1000);
+    refresh(); timer = setInterval(refresh, (view.visible ? every : 30) * 1000);
   };
   // Commands get the session object from the list (a click or the right-click menu), or nothing from the Command Palette.
   const nameOf = s => { const n = s && typeof s === 'object' ? s.name : s; return typeof n === 'string' && L.NAME.test(n) ? n : null; };
@@ -75,18 +82,21 @@ function activate(context) {
     t.show();
   });
 
-  function open(name) {
-    const s = byName(name), old = s && terminals.get(s.id);
+  async function open(name) {
+    let s = byName(name);
+    if (!s) { await refresh(); s = byName(name); }   // the list may be a few seconds old
+    if (!s) return void vscode.window.showWarningMessage(`The tmux session "${name}" no longer exists.`);
+    const old = terminals.get(keyOf(s));
     if (old && old.exitStatus === undefined) return old.show();
     // The terminal is tmux itself, attached to the session: closing the tab detaches, the session keeps running.
     const t = vscode.window.createTerminal({ name, shellPath: tmuxPath(), shellArgs: L.attachArgs(socket(), name),
       iconPath: new vscode.ThemeIcon('terminal-tmux'), isTransient: true });   // transient: VS Code does not try to revive it after a restart
-    if (s) terminals.set(s.id, t);
-    t.show();
+    terminals.set(keyOf(s), t); t.show();
   }
 
   async function create() {
-    const local = (vscode.workspace.workspaceFolders || []).filter(f => f.uri.scheme === 'file' && fs.existsSync(f.uri.fsPath));
+    // Folders on the machine this extension runs on: a plain local folder, or the remote side of an SSH, WSL or container window.
+    const local = (vscode.workspace.workspaceFolders || []).filter(f => (f.uri.scheme === 'file' || (vscode.env.remoteName && f.uri.scheme === 'vscode-remote')) && fs.existsSync(f.uri.fsPath));
     let where = local.length ? local[0].uri.fsPath : os.homedir();
     if (local.length > 1) {   // several folders open: ask which one
       const f = await vscode.window.showQuickPick(local.map(x => ({ label: x.name, description: x.uri.fsPath })), { placeHolder: 'Start the session in which folder?' });
@@ -98,10 +108,15 @@ function activate(context) {
     await refresh();
     const name = L.uniqueName(L.cleanName(where), sessions.items.map(s => s.name));
     const made = await run(L.createArgs(socket(), name), where);   // the folder goes in as the working directory, never as an argument
-    if (!made.ok) return void vscode.window.showErrorMessage(made.missing ? 'tmux was not found. Install tmux, or set "tmuxSessions.tmuxPath".' : `Could not start a session: ${made.err.trim() || 'tmux refused.'}`);
+    if (!made.ok) return void vscode.window.showErrorMessage(!fs.existsSync(where) ? `The folder ${where} no longer exists.`
+      : made.missing ? 'tmux was not found. Install tmux, or set "tmuxSessions.tmuxPath".' : `Could not start a session: ${made.err.trim() || 'tmux refused.'}`);
     await run(L.lookArgs(socket(), name, vscode.workspace.getConfiguration('tmuxSessions').get('hideStatusLine') !== false));
-    if (kind.command) { await run(L.typeArgs(socket(), name, kind.command)); await run(L.enterArgs(socket(), name)); }
-    await refresh(); open(name);
+    if (kind.command) {
+      const typed = await run(L.typeArgs(socket(), name, kind.command));
+      if (typed.ok) await run(L.enterArgs(socket(), name));
+      else vscode.window.showWarningMessage(`The session was started, but "${kind.command}" could not be typed into it: ${typed.err.trim() || 'tmux refused.'}`);
+    }
+    await refresh(); await open(name);
   }
 
   async function rename(s) {
@@ -111,11 +126,11 @@ function activate(context) {
     if (!to || to === name) return;
     await refresh();
     if (sessions.items.some(x => x.name === to)) return void vscode.window.showErrorMessage(`There is already a session called ${to}.`);
+    const before = byName(name), t = before && terminals.get(keyOf(before));   // found now: after the rename the list no longer has this name
     const r = await run(L.renameArgs(socket(), name, to));
     if (!r.ok) return void vscode.window.showErrorMessage(`Could not rename: ${r.err.trim() || 'tmux refused.'}`);
     // The open terminal tab is renamed too. VS Code can only rename the active terminal, so the tab is brought to the
     // front first, and left alone if that did not work (it then keeps its old title until reopened).
-    const s0 = byName(name), t = s0 && terminals.get(s0.id);
     if (t && t.exitStatus === undefined && await focus(t)) {
       try { await vscode.commands.executeCommand('workbench.action.terminal.renameWithArg', { name: to }); } catch { /* the tab keeps its old title */ }
     }
@@ -133,12 +148,12 @@ function activate(context) {
 
   context.subscriptions.push(view, { dispose: () => clearInterval(timer) },
     view.onDidChangeVisibility(poll),
-    vscode.window.onDidChangeWindowState(w => { if (w.focused && view.visible) refresh(); }),
+    vscode.window.onDidChangeWindowState(w => { if (w.focused) refresh(); }),
     vscode.window.onDidCloseTerminal(t => { for (const [id, x] of terminals) if (x === t) terminals.delete(id); refresh(); }),
     vscode.workspace.onDidChangeConfiguration(e => { if (e.affectsConfiguration('tmuxSessions')) poll(); }),
     vscode.commands.registerCommand('tmuxSessions.refresh', refresh),
     vscode.commands.registerCommand('tmuxSessions.new', create),
-    vscode.commands.registerCommand('tmuxSessions.open', async s => { const n = await pickSession(s, 'Open which session?'); if (n) open(n); }),
+    vscode.commands.registerCommand('tmuxSessions.open', async s => { const n = await pickSession(s, 'Open which session?'); if (n) await open(n); }),
     vscode.commands.registerCommand('tmuxSessions.rename', rename),
     vscode.commands.registerCommand('tmuxSessions.kill', kill));
   poll();

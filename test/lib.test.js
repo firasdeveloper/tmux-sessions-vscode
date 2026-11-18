@@ -13,25 +13,26 @@ test('socketName: a simple name is a private server, empty is the default server
   assert.equal(L.socketName(7), 'vscode');
 });
 
-test('every command except create passes -N, so it can never start a tmux server', () => {
-  for (const a of [L.listArgs('s'), L.attachArgs('s', 'a'), L.lookArgs('s', 'a', true), L.typeArgs('s', 'a', 'x'), L.enterArgs('s', 'a'), L.renameArgs('s', 'a', 'b'), L.killArgs('s', 'a')])
-    assert.ok(a.includes('-N'), a.join(' '));
-  assert.ok(!L.createArgs('s', 'a').includes('-N'));
+test('no command uses -N (tmux only has it since 3.2), and every one passes -u so the output does not depend on the locale', () => {
+  for (const a of [L.listArgs('s', 'tok'), L.attachArgs('s', 'a'), L.createArgs('s', 'a'), L.lookArgs('s', 'a', true), L.typeArgs('s', 'a', 'x'), L.enterArgs('s', 'a'), L.renameArgs('s', 'a', 'b'), L.killArgs('s', 'a')]) {
+    assert.ok(!a.includes('-N'), a.join(' ')); assert.equal(a[0], '-u', a.join(' '));
+  }
 });
 
 test('the socket: -L <name> for a private server, nothing for the default server', () => {
-  assert.deepEqual(L.killArgs('work', 'a'), ['-L', 'work', '-N', 'kill-session', '-t', '=a']);
-  assert.deepEqual(L.killArgs('', 'a'), ['-N', 'kill-session', '-t', '=a']);
+  assert.deepEqual(L.killArgs('work', 'a'), ['-u', '-L', 'work', 'kill-session', '-t', '=a']);
+  assert.deepEqual(L.killArgs('', 'a'), ['-u', 'kill-session', '-t', '=a']);
 });
 
 test('targets pin the exact session with "="', () => {
-  assert.deepEqual(L.attachArgs('s', 'notes'), ['-L', 's', '-N', 'attach-session', '-t', '=notes']);
-  assert.deepEqual(L.renameArgs('s', 'notes', 'notes2'), ['-L', 's', '-N', 'rename-session', '-t', '=notes', 'notes2']);
-  assert.deepEqual(L.typeArgs('s', 'notes', 'claude --continue').slice(-3), ['=notes:', '-l', 'claude --continue']);
+  assert.deepEqual(L.attachArgs('s', 'notes'), ['-u', '-L', 's', 'attach-session', '-t', '=notes']);
+  assert.deepEqual(L.renameArgs('s', 'notes', 'notes2'), ['-u', '-L', 's', 'rename-session', '-t', '=notes', '--', 'notes2']);
+  assert.deepEqual(L.typeArgs('s', 'notes', 'claude --continue').slice(-4), ['=notes:', '-l', '--', 'claude --continue']);
+  assert.equal(L.typeArgs('s', 'notes', 'a; b;').pop(), 'a; b\\;', 'a trailing ; would be read by tmux as its own separator');
 });
 
 test('a bad session name is refused before it reaches tmux', () => {
-  for (const bad of ['', 'a b', 'a:b', 'a.b', '-t x; rm', 'x'.repeat(49)]) {
+  for (const bad of ['', 'a b', 'a:b', 'a.b', '-t x; rm', '-x', '-', 'x'.repeat(49)]) {
     assert.throws(() => L.attachArgs('s', bad));
     assert.throws(() => L.killArgs('s', bad));
     assert.throws(() => L.renameArgs('s', 'ok', bad));
@@ -53,14 +54,15 @@ test('stateOf: a bell is attention, recent output is working, otherwise quiet', 
   assert.equal(L.stateOf('0', NaN, 1000), 'quiet');
 });
 
-test('parseSessions: reads the fields, skips odd names, sorts by name with numbers in order', () => {
-  const out = ['$0\tweb-10\t0\tzsh\t/x/web\t0\t0', '$1\tweb-2\t1\t2.1.3\t/x/web\t995\t0', '$2\tbad name\t0\tzsh\t/x\t0\t0', 'x\tnoid\t0\tzsh\t/x\t0\t0', '$3\tapi\t0\tnode\t/x/api/\t0\t1', ''].join('\n');
-  const s = L.parseSessions(out, 1000);
-  assert.deepEqual(s.map(x => x.name), ['api', 'web-2', 'web-10']);
-  assert.deepEqual(s[1], { id: '$1', name: 'web-2', attached: 1, command: 'claude', dir: '/x/web', state: 'working' });
+test('parseSessions: reads the fields, skips odd names, keeps the order of creation (so the list never reshuffles)', () => {
+  const out = ['T\t$10\tweb-10\t0\t0\t0\tzsh\t/x/web', 'T\t$9\tweb-2\t1\t995\t0\t2.1.3\t/x/web', 'T\t$2\tbad name\t0\t0\t0\tzsh\t/x', 'T\tx\tnoid\t0\t0\t0\tzsh\t/x', 'T\t$3\tapi\t0\t0\t1\tnode\t/x/api/', ''].join('\n');
+  const s = L.parseSessions(out, 1000, 'T');
+  assert.equal(s.hidden, 1, 'a session that exists but cannot be shown is counted');
+  assert.deepEqual(s.map(x => x.name), ['api', 'web-2', 'web-10']);   // ids $3, $9, $10: oldest first, numerically
+  assert.deepEqual(s[1], { id: '$9', name: 'web-2', attached: 1, command: 'claude', dir: '/x/web', state: 'working' });
   assert.equal(s[0].state, 'attention');
   assert.equal(L.describe(s[0]), 'node · api');
-  assert.deepEqual(L.parseSessions('', 1000), []);
+  assert.deepEqual([...L.parseSessions('', 1000, 'T')], []);
 });
 
 test('cleanName and uniqueName', () => {
@@ -93,20 +95,21 @@ const haveTmux = spawnSync(tmux, ['-V']).status === 0;
 test('against real tmux: create, look, list, type, rename, kill', { skip: !haveTmux && 'tmux is not installed' }, () => {
   const sock = 'tsv-test-' + process.pid, run = args => execFileSync(tmux, args, { encoding: 'utf8', env: { ...process.env, LC_ALL: 'en_US.UTF-8' } });
   try {
-    assert.equal(spawnSync(tmux, L.listArgs(sock)).status !== 0, true, 'listing must not start a server');
+    assert.equal(spawnSync(tmux, L.listArgs(sock, 'tk')).status !== 0, true); assert.notEqual(spawnSync(tmux, ['-L', sock, 'has-session']).status, 0, 'listing must not start a server');
     run(L.createArgs(sock, 'one')); run(L.createArgs(sock, 'one-more'));
     run(L.lookArgs(sock, 'one', true));
     assert.equal(run(['-L', sock, 'show-options', '-t', '=one:', '-v', 'status']).trim(), 'off');
     assert.notEqual(run(['-L', sock, 'show-options', '-t', '=one-more:', '-A', '-v', 'status']).trim(), 'off', 'the other session keeps its status line');
-    run(L.typeArgs(sock, 'one', 'echo hi')); run(L.enterArgs(sock, 'one'));
-    assert.deepEqual(L.parseSessions(run(L.listArgs(sock)), Date.now() / 1000).map(s => s.name), ['one', 'one-more']);
-    const idBefore = L.parseSessions(run(L.listArgs(sock)), Date.now() / 1000).find(s => s.name === 'one').id;
+    run(L.typeArgs(sock, 'one', '-dash --first; echo two;'));   // a leading dash and a trailing ; must both arrive as typed
+    assert.ok(run(['-L', sock, 'capture-pane', '-p', '-t', '=one:']).includes('-dash --first; echo two;'));
+    assert.deepEqual(L.parseSessions(run(L.listArgs(sock, 'tk')), Date.now() / 1000, 'tk').map(s => s.name), ['one', 'one-more']);
+    const idBefore = L.parseSessions(run(L.listArgs(sock, 'tk')), Date.now() / 1000, 'tk').find(s => s.name === 'one').id;
     run(L.renameArgs(sock, 'one', 'renamed'));   // "=one" must not have matched "one-more"
-    const after = L.parseSessions(run(L.listArgs(sock)), Date.now() / 1000);
-    assert.deepEqual(after.map(s => s.name), ['one-more', 'renamed']);
+    const after = L.parseSessions(run(L.listArgs(sock, 'tk')), Date.now() / 1000, 'tk');
+    assert.deepEqual(after.map(s => s.name), ['renamed', 'one-more'], 'a rename does not move the session in the list');
     assert.equal(after.find(s => s.name === 'renamed').id, idBefore, 'a rename keeps the session id');
     run(L.killArgs(sock, 'renamed'));
-    assert.deepEqual(L.parseSessions(run(L.listArgs(sock)), Date.now() / 1000).map(s => s.name), ['one-more']);
+    assert.deepEqual(L.parseSessions(run(L.listArgs(sock, 'tk')), Date.now() / 1000, 'tk').map(s => s.name), ['one-more']);
   } finally { spawnSync(tmux, ['-L', sock, 'kill-server']); }
 });
 
@@ -123,5 +126,29 @@ test('against real tmux: a folder name with tmux format characters is taken lite
     const where = execFileSync(tmux, ['-L', sock, 'display-message', '-p', '-t', '=fmt:', '#{pane_current_path}'], { encoding: 'utf8' }).trim();
     assert.equal(where, folder, 'the session starts in exactly that folder');
     assert.equal(fs.existsSync(path.join(folder, 'ran')) || fs.existsSync(path.join(root, 'ran')), false, 'nothing from the folder name was run');
+  } finally { spawnSync(tmux, ['-L', sock, 'kill-server']); fs.rmSync(root, { recursive: true, force: true }); }
+});
+
+test('a folder or program name cannot forge rows in the list: only lines that start with this call\'s token count', () => {
+  const tok = L.newToken(); assert.match(tok, /^[a-f0-9]{16,}$/); assert.notEqual(tok, L.newToken());
+  // a real session whose folder name contains a newline and a made-up record, and one with a tab in its folder name
+  const out = [`${tok}\t$0\treal\t0\t0\t0\tzsh\t/x/evil`, '$99\tforged\t0\t0\t1\tzsh\t/tmp', `nottok\t$98\talso-forged\t0\t0\t1\tzsh\t/tmp`, `${tok}\t$1\ttabby\t0\t0\t0\tzsh\t/x/tab\tdir`].join('\n');
+  const s = L.parseSessions(out, 1000, tok);
+  assert.deepEqual(s.map(x => x.name), ['real', 'tabby']);
+  assert.equal(s[1].dir, '/x/tab dir', 'control characters are never shown');
+  assert.ok(s.every(x => x.state === 'quiet'));
+});
+
+test('cleanEnv: the tmux server must not inherit the editor\'s private variables, and no locale is forced', () => {
+  const e = L.cleanEnv({ PATH: '/bin', HOME: '/h', LANG: 'de_DE.UTF-8', ELECTRON_RUN_AS_NODE: '1', ELECTRON_NO_ASAR: '1', VSCODE_PID: '1', VSCODE_IPC_HOOK: 'x', TMUX: '/tmp/x,1,0', TMUX_PANE: '%1' });
+  assert.deepEqual(e, { PATH: '/bin', HOME: '/h', LANG: 'de_DE.UTF-8' });
+});
+
+test('against real tmux: with a server already running, a second session still starts in the given folder', { skip: !haveTmux && 'tmux is not installed' }, () => {
+  const fs = require('node:fs'), path = require('node:path');
+  const sock = 'tsv-cwd-' + process.pid, root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'tsv-')), second = path.join(root, 'second'); fs.mkdirSync(second);
+  try {
+    execFileSync(tmux, L.createArgs(sock, 'a'), { cwd: root }); execFileSync(tmux, L.createArgs(sock, 'b'), { cwd: second });
+    assert.equal(execFileSync(tmux, ['-L', sock, 'display-message', '-p', '-t', '=b:', '#{pane_current_path}'], { encoding: 'utf8' }).trim(), second);
   } finally { spawnSync(tmux, ['-L', sock, 'kill-server']); fs.rmSync(root, { recursive: true, force: true }); }
 });

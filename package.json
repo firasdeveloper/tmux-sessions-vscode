@@ -2,7 +2,7 @@
   "name": "tmux-sessions",
   "displayName": "tmux Sessions",
   "description": "A sidebar for your tmux sessions: see which are busy, open one as a terminal, create, rename and kill. Sessions keep running when VS Code closes.",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "publisher": "firasdeveloper",
   "license": "MIT",
   "repository": { "type": "git", "url": "https://github.com/firasdeveloper/tmux-sessions-vscode.git" },
