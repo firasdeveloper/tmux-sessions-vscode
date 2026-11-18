@@ -1,0 +1,77 @@
+{
+  "name": "tmux-sessions",
+  "displayName": "tmux Sessions",
+  "description": "A sidebar for your tmux sessions: see which are busy, open one as a terminal, create, rename and kill. Sessions keep running when VS Code closes.",
+  "version": "0.1.0",
+  "publisher": "firasdeveloper",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/firasdeveloper/tmux-sessions-vscode.git" },
+  "engines": { "vscode": "^1.90.0" },
+  "categories": ["Other"],
+  "keywords": ["tmux", "terminal", "sessions", "claude", "ai agents"],
+  "main": "./extension.js",
+  "activationEvents": [],
+  "extensionKind": ["workspace"],
+  "capabilities": {
+    "untrustedWorkspaces": { "supported": true },
+    "virtualWorkspaces": { "supported": "limited", "description": "Sessions start in your home folder when the workspace is not a local folder." }
+  },
+  "scripts": { "test": "node --test test/*.test.js", "package": "npx --yes @vscode/vsce package" },
+  "contributes": {
+    "viewsContainers": { "activitybar": [{ "id": "tmuxSessions", "title": "tmux Sessions", "icon": "media/icon.svg" }] },
+    "views": { "tmuxSessions": [{ "id": "tmuxSessions.list", "name": "Sessions" }] },
+    "viewsWelcome": [
+      { "view": "tmuxSessions.list", "when": "tmuxSessions.state == 'notmux'", "contents": "tmux was not found on this machine.\nInstall it (macOS: brew install tmux, Debian/Ubuntu: sudo apt install tmux), or set its path in the tmuxSessions.tmuxPath setting.\n[Refresh](command:tmuxSessions.refresh)" },
+      { "view": "tmuxSessions.list", "when": "tmuxSessions.state != 'notmux'", "contents": "No tmux sessions yet.\n[New session here](command:tmuxSessions.new)\nA session keeps running after you close its terminal tab or VS Code." }
+    ],
+    "commands": [
+      { "command": "tmuxSessions.new", "title": "New Session Here", "category": "tmux Sessions", "icon": "$(add)" },
+      { "command": "tmuxSessions.refresh", "title": "Refresh", "category": "tmux Sessions", "icon": "$(refresh)" },
+      { "command": "tmuxSessions.open", "title": "Open Session", "category": "tmux Sessions" },
+      { "command": "tmuxSessions.rename", "title": "Rename Session…", "category": "tmux Sessions" },
+      { "command": "tmuxSessions.kill", "title": "Kill Session…", "category": "tmux Sessions" }
+    ],
+    "menus": {
+      "view/title": [
+        { "command": "tmuxSessions.new", "when": "view == tmuxSessions.list", "group": "navigation@1" },
+        { "command": "tmuxSessions.refresh", "when": "view == tmuxSessions.list", "group": "navigation@2" }
+      ],
+      "view/item/context": [
+        { "command": "tmuxSessions.open", "when": "view == tmuxSessions.list && viewItem == session", "group": "1@1" },
+        { "command": "tmuxSessions.rename", "when": "view == tmuxSessions.list && viewItem == session", "group": "1@2" },
+        { "command": "tmuxSessions.kill", "when": "view == tmuxSessions.list && viewItem == session", "group": "2@1" }
+      ]
+    },
+    "configuration": {
+      "title": "tmux Sessions",
+      "properties": {
+        "tmuxSessions.socketName": {
+          "type": "string", "default": "vscode", "scope": "application",
+          "markdownDescription": "Which tmux server to use. A name (letters, numbers, dashes) selects a private server, the same as `tmux -L <name>`, so these sessions stay separate from any tmux you already use. Leave empty to use your default tmux server. Read from your user settings only."
+        },
+        "tmuxSessions.newSessionCommands": {
+          "type": "array", "scope": "application",
+          "default": [
+            { "label": "Shell", "command": "" },
+            { "label": "Claude", "command": "claude" },
+            { "label": "Claude (continue last conversation)", "command": "claude --continue" }
+          ],
+          "items": { "type": "object", "required": ["label", "command"], "properties": { "label": { "type": "string" }, "command": { "type": "string" } } },
+          "markdownDescription": "What **New Session Here** offers. `command` is typed into the new session and run; leave it empty for a plain shell. Read from your user settings only, so a folder you open cannot change what gets run."
+        },
+        "tmuxSessions.hideStatusLine": {
+          "type": "boolean", "default": true,
+          "description": "Hide tmux's green status line in sessions created here (the terminal tab already shows the name). Applies to new sessions only."
+        },
+        "tmuxSessions.refreshSeconds": {
+          "type": "number", "default": 5, "minimum": 2, "maximum": 60,
+          "description": "How often the list refreshes while it is visible."
+        },
+        "tmuxSessions.tmuxPath": {
+          "type": "string", "default": "", "scope": "machine",
+          "markdownDescription": "Absolute path of the tmux program, if it is not in a usual place. Read from your user settings only."
+        }
+      }
+    }
+  }
+}
