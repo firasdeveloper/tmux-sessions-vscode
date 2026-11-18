@@ -86,7 +86,9 @@ const checked = name => { if (!NAME.test(name)) throw new Error('bad session nam
 const listArgs = socket => [...base(socket), '-N', 'list-sessions', '-F', FIELDS.join('\t')];
 // The "=" pins the exact session name; without it tmux would also match a name that merely starts the same.
 const attachArgs = (socket, name) => [...base(socket), '-N', 'attach-session', '-t', '=' + checked(name)];
-const createArgs = (socket, name, folder) => [...base(socket), 'new-session', '-d', '-s', checked(name), '-c', folder];
+// The folder is deliberately NOT an argument: tmux expands "#{...}" and "#(command)" in `new-session -c`, so a folder
+// name could be read as a format. The caller runs this with the folder as its working directory, which tmux uses as is.
+const createArgs = (socket, name) => [...base(socket), 'new-session', '-d', '-s', checked(name)];
 /** Per-session look, never global: VS Code already shows the name on the tab, and the mouse wheel should scroll the history. */
 const lookArgs = (socket, name, hideStatus) => [...base(socket), '-N', 'set-option', '-t', '=' + checked(name) + ':', 'mouse', 'on',
   ...(hideStatus ? [';', 'set-option', '-t', '=' + name + ':', 'status', 'off'] : [])];

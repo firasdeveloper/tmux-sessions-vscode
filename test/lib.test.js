@@ -16,7 +16,7 @@ test('socketName: a simple name is a private server, empty is the default server
 test('every command except create passes -N, so it can never start a tmux server', () => {
   for (const a of [L.listArgs('s'), L.attachArgs('s', 'a'), L.lookArgs('s', 'a', true), L.typeArgs('s', 'a', 'x'), L.enterArgs('s', 'a'), L.renameArgs('s', 'a', 'b'), L.killArgs('s', 'a')])
     assert.ok(a.includes('-N'), a.join(' '));
-  assert.ok(!L.createArgs('s', 'a', '/tmp').includes('-N'));
+  assert.ok(!L.createArgs('s', 'a').includes('-N'));
 });
 
 test('the socket: -L <name> for a private server, nothing for the default server', () => {
@@ -35,7 +35,7 @@ test('a bad session name is refused before it reaches tmux', () => {
     assert.throws(() => L.attachArgs('s', bad));
     assert.throws(() => L.killArgs('s', bad));
     assert.throws(() => L.renameArgs('s', 'ok', bad));
-    assert.throws(() => L.createArgs('s', bad, '/tmp'));
+    assert.throws(() => L.createArgs('s', bad));
   }
 });
 
@@ -94,7 +94,7 @@ test('against real tmux: create, look, list, type, rename, kill', { skip: !haveT
   const sock = 'tsv-test-' + process.pid, run = args => execFileSync(tmux, args, { encoding: 'utf8', env: { ...process.env, LC_ALL: 'en_US.UTF-8' } });
   try {
     assert.equal(spawnSync(tmux, L.listArgs(sock)).status !== 0, true, 'listing must not start a server');
-    run(L.createArgs(sock, 'one', os.tmpdir())); run(L.createArgs(sock, 'one-more', os.tmpdir()));
+    run(L.createArgs(sock, 'one')); run(L.createArgs(sock, 'one-more'));
     run(L.lookArgs(sock, 'one', true));
     assert.equal(run(['-L', sock, 'show-options', '-t', '=one:', '-v', 'status']).trim(), 'off');
     assert.notEqual(run(['-L', sock, 'show-options', '-t', '=one-more:', '-A', '-v', 'status']).trim(), 'off', 'the other session keeps its status line');
@@ -108,4 +108,20 @@ test('against real tmux: create, look, list, type, rename, kill', { skip: !haveT
     run(L.killArgs(sock, 'renamed'));
     assert.deepEqual(L.parseSessions(run(L.listArgs(sock)), Date.now() / 1000).map(s => s.name), ['one-more']);
   } finally { spawnSync(tmux, ['-L', sock, 'kill-server']); }
+});
+
+// tmux expands "#{...}" and runs "#(...)" in the folder given to `new-session -c`. A folder name must never get there:
+// the folder is handed over as the working directory of the tmux command instead.
+test('against real tmux: a folder name with tmux format characters is taken literally and runs nothing', { skip: !haveTmux && 'tmux is not installed' }, () => {
+  const fs = require('node:fs'), path = require('node:path');
+  const sock = 'tsv-fmt-' + process.pid, root = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), 'tsv-'));
+  const folder = path.join(root, 'odd #(touch ran) #{session_name}'); fs.mkdirSync(folder);   // the command would run in the server's folder
+  try {
+    const args = L.createArgs(sock, 'fmt');
+    assert.ok(!args.includes('-c') && !args.some(a => a.includes('#')), 'no folder among the arguments');
+    execFileSync(tmux, args, { cwd: folder, env: { ...process.env, LC_ALL: 'en_US.UTF-8' } });
+    const where = execFileSync(tmux, ['-L', sock, 'display-message', '-p', '-t', '=fmt:', '#{pane_current_path}'], { encoding: 'utf8' }).trim();
+    assert.equal(where, folder, 'the session starts in exactly that folder');
+    assert.equal(fs.existsSync(path.join(folder, 'ran')) || fs.existsSync(path.join(root, 'ran')), false, 'nothing from the folder name was run');
+  } finally { spawnSync(tmux, ['-L', sock, 'kill-server']); fs.rmSync(root, { recursive: true, force: true }); }
 });

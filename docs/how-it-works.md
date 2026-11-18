@@ -37,7 +37,7 @@ The server starts with the first session you create and exits when its last sess
 
 **New Session Here** runs, in order:
 
-1. `tmux new-session -d -s <name> -c <folder>`: a detached session in the open folder (your home folder if no folder is open; you are asked when several are open). The name is the folder's name, with `-2`, `-3`... added if taken.
+1. `tmux new-session -d -s <name>`, run *from* the open folder: a detached session there (your home folder if no folder is open; you are asked when several are open). The name is the folder's name, with `-2`, `-3`... added if taken.
 2. `tmux set-option -t <name> mouse on` (and `status off` unless you turned `hideStatusLine` off). These are set **on that session only**, never globally. Mouse mode makes the wheel scroll tmux's history; the status line is hidden because the tab already shows the name.
 3. If you picked a command, it is *typed* into the session followed by Enter (`tmux send-keys -l`). It is typed rather than passed as the session's program on purpose: when the command exits you are left in a normal shell, and the session survives.
 4. The session is opened as a terminal tab.
@@ -75,6 +75,7 @@ Renaming from outside works too. If you run `tmux -L vscode rename-session ...` 
 ## Safety
 
 - **No shell strings.** Every tmux call is an argument array passed straight to the program, so a session or folder name can never be interpreted as a command. All of them are built in `lib.js`, which has no other job and is unit-tested, including against a real tmux.
+- **Folder names never reach tmux as text.** tmux treats `#{...}` and `#(command)` specially in some arguments, including the start folder of a new session. The folder is therefore passed as the working directory of the tmux command, not as an argument, so a folder with such a name is just a folder.
 - **Names are validated** before they reach tmux, and names read back from tmux are validated again before they are shown or used.
 - **Settings that choose what runs** (`tmuxPath`, `socketName`, `newSessionCommands`) are read from your user settings only. Workspace settings are ignored for these, so opening someone's repository cannot plant a command.
 - **No network, no telemetry, no files written.** The only program started is `tmux`.

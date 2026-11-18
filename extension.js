@@ -17,7 +17,7 @@ const userSetting = key => { const i = vscode.workspace.getConfiguration('tmuxSe
 const tmuxPath = () => L.pickTmux(userSetting('tmuxPath'), p => { try { return fs.statSync(p).isFile(); } catch { return false; } });
 const socket = () => L.socketName(userSetting('socketName'));
 // LC_ALL: without a UTF-8 locale tmux prints the tab separators of the list as "_".
-const run = args => new Promise(resolve => execFile(tmuxPath(), args, { timeout: 8000, env: { ...process.env, LC_ALL: 'en_US.UTF-8' } },
+const run = (args, cwd) => new Promise(resolve => execFile(tmuxPath(), args, { timeout: 8000, cwd, env: { ...process.env, LC_ALL: 'en_US.UTF-8' } },
   (err, out, errOut) => resolve({ ok: !err, missing: !!err && err.code === 'ENOENT', out: String(out || ''), err: String(errOut || '') })));
 
 class Sessions {
@@ -97,7 +97,7 @@ function activate(context) {
     if (!kind) return;
     await refresh();
     const name = L.uniqueName(L.cleanName(where), sessions.items.map(s => s.name));
-    const made = await run(L.createArgs(socket(), name, where));
+    const made = await run(L.createArgs(socket(), name), where);   // the folder goes in as the working directory, never as an argument
     if (!made.ok) return void vscode.window.showErrorMessage(made.missing ? 'tmux was not found. Install tmux, or set "tmuxSessions.tmuxPath".' : `Could not start a session: ${made.err.trim() || 'tmux refused.'}`);
     await run(L.lookArgs(socket(), name, vscode.workspace.getConfiguration('tmuxSessions').get('hideStatusLine') !== false));
     if (kind.command) { await run(L.typeArgs(socket(), name, kind.command)); await run(L.enterArgs(socket(), name)); }
