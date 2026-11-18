@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="236" viewBox="0 0 720 236" role="img" aria-label="The tmux Sessions sidebar: three sessions, one working, one quiet, one that rang the bell">
+  <style>
+    text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+    .name { font-size: 14px; fill: #e6e6e6; }
+    .desc { font-size: 13px; fill: #9a9a9a; }
+    .head { font-size: 11px; fill: #bdbdbd; letter-spacing: .6px; }
+    .note { font-size: 13px; fill: #9a9a9a; }
+  </style>
+  <rect width="720" height="236" fill="#1e1e1e"/>
+  <rect x="16" y="16" width="330" height="204" rx="6" fill="#252526" stroke="#3c3c3c"/>
+  <text x="34" y="45" class="head">TMUX SESSIONS</text>
+  <g stroke="#c5c5c5" stroke-width="1.5" fill="none" stroke-linecap="round">
+    <path d="M286 36v10M281 41h10"/>
+    <path d="M321 37.5a5 5 0 1 0 1.3 4.8"/><path d="M321.4 33.6v4.2h-4.2"/>
+  </g>
+  <line x1="16" y1="58" x2="346" y2="58" stroke="#3c3c3c"/>
+  <circle cx="42" cy="86" r="5.5" fill="#73c991"/>
+  <text x="60" y="91" class="name">api</text><text x="150" y="91" class="desc">claude · api</text>
+  <circle cx="42" cy="130" r="5" fill="none" stroke="#8a8a8a" stroke-width="1.5"/>
+  <text x="60" y="135" class="name">api-2</text><text x="150" y="135" class="desc">zsh · api</text>
+  <g transform="translate(34 164)" fill="none" stroke="#cca700" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3 12.5h10l-1.4-2V7a3.6 3.6 0 0 0-7.2 0v3.5z"/><path d="M6.6 15a1.5 1.5 0 0 0 2.8 0"/>
+  </g>
+  <circle cx="48" cy="166.5" r="2.6" fill="#cca700"/>
+  <text x="60" y="179" class="name">web</text><text x="150" y="179" class="desc">claude · web</text>
+  <g stroke="#555" stroke-width="1"><path d="M362 86h22M362 130h22M362 174h22"/></g>
+  <text x="394" y="91" class="note">printing output right now</text>
+  <text x="394" y="135" class="note">quiet</text>
+  <text x="394" y="179" class="note">rang the bell: it wants you</text>
+</svg>

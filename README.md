@@ -4,12 +4,7 @@ A sidebar for your tmux sessions. See which ones are busy, open one as an ordina
 
 The point of tmux here: **a session keeps running when you close its terminal tab, reload the window, or quit VS Code.** A long build, a dev server or an AI coding agent (Claude Code, Copilot CLI, ...) carries on, and you pick it up again later with one click, with its full output still there.
 
-```
-TMUX SESSIONS            +  ⟳
- ● api          claude · api          <- printing output right now
- ○ api-2        zsh · api             <- quiet
- 🔔 web          claude · web          <- rang the bell: it wants you
-```
+<p align="center"><img src="docs/sidebar.png" alt="The tmux Sessions sidebar: one session working, one quiet, one that rang the bell" width="720"></p>
 
 ## What you get
 
