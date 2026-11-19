@@ -62,6 +62,11 @@ test('parseSessions: reads the fields, skips odd names, keeps the order of creat
   assert.deepEqual(s[1], { id: '$9', name: 'web-2', attached: 1, command: 'claude', dir: '/x/web', state: 'working' });
   assert.equal(s[0].state, 'attention');
   assert.equal(L.describe(s[0]), 'node · api');
+  assert.deepEqual(L.parseSessions(out, 1000, 'T', 'name').map(x => x.name), ['api', 'web-2', 'web-10']);
+  const mixed = ['T\t$1\tzeta\t0\t0\t0\tzsh\t/x', 'T\t$2\talpha-10\t0\t0\t0\tzsh\t/x', 'T\t$3\talpha-9\t0\t0\t0\tzsh\t/x'].join('\n');
+  assert.deepEqual(L.parseSessions(mixed, 1000, 'T').map(x => x.name), ['zeta', 'alpha-10', 'alpha-9'], 'default: as created');
+  assert.deepEqual(L.parseSessions(mixed, 1000, 'T', 'name').map(x => x.name), ['alpha-9', 'alpha-10', 'zeta'], 'by name, numbers in order');
+  assert.deepEqual([L.sortBy('name'), L.sortBy('created'), L.sortBy('x'), L.sortBy(undefined)], ['name', 'created', 'created', 'created']);
   assert.deepEqual([...L.parseSessions('', 1000, 'T')], []);
 });
 

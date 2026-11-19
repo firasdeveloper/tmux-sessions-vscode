@@ -18,7 +18,7 @@ This extension is a thin layer on top of that:
                                                window on the left closes
 ```
 
-- **The list** comes from `tmux list-sessions`, run every few seconds while the sidebar is visible, and every 30 seconds while it is hidden (only to keep the count on the icon right). Sessions are shown in the order they were created, which never changes.
+- **The list** comes from `tmux list-sessions`, run every few seconds while the sidebar is visible, and every 30 seconds while it is hidden (only to keep the count on the icon right). Sessions are shown in the order they were created, which never changes, or by name if you choose that (`tmuxSessions.sortBy`, or the `...` menu of the list). Sorting by name puts numbers in order, so `api-9` comes before `api-10`.
 - **A terminal tab** is not a shell that happens to run tmux. VS Code starts `tmux attach-session` directly as the tab's program. So closing the tab ends that tmux *client* only; the session and everything in it carries on.
 - **Nothing is stored by the extension.** There is no database and no state file. tmux is the single source of truth, which is why the list is always right even if you also change things from a plain terminal.
 

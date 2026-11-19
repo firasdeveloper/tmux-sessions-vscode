@@ -62,11 +62,13 @@ const stateOf = (bell, windowActivity, nowSec) =>
   : Number.isFinite(windowActivity) && nowSec - windowActivity <= WORKING_SECONDS ? 'working'
   : 'quiet';
 
+/** The order of the list: 'created' (the default; it never changes) or 'name'. */
+const sortBy = v => (v === 'name' ? 'name' : 'created');
 const plain = v => String(v).replace(/[\x00-\x1f\x7f]+/g, ' ').trim();
 /** Parse `tmux list-sessions` output (see listArgs) into sessions, oldest first: tmux numbers sessions as they are
- *  created, so the list keeps its order whatever is busy or renamed. Rows without this call's token are ignored;
+ *  created, so the list keeps its order whatever is busy or renamed; or by name when `order` is 'name'. Rows without this call's token are ignored;
  *  sessions that exist but have a name this extension does not handle are counted in `.hidden`. */
-function parseSessions(out, nowSec, token) {
+function parseSessions(out, nowSec, token, order) {
   const sessions = []; let hidden = 0;
   for (const line of String(out).split('\n')) {
     const [tok, id = '', name = '', attached = '0', winAct = '', bell = '', command = '', ...dir] = line.split('\t');
@@ -75,7 +77,7 @@ function parseSessions(out, nowSec, token) {
     const wa = winAct.trim() === '' ? NaN : Number(winAct);
     sessions.push({ id, name, attached: Number(attached) || 0, command: commandName(plain(command)), dir: plain(dir.join('\t')), state: stateOf(bell, wa, nowSec) });
   }
-  sessions.sort((a, b) => Number(a.id.slice(1)) - Number(b.id.slice(1)));
+  sessions.sort(sortBy(order) === 'name' ? (a, b) => a.name.localeCompare(b.name, 'en', { numeric: true }) : (a, b) => Number(a.id.slice(1)) - Number(b.id.slice(1)));
   sessions.hidden = hidden;
   return sessions;
 }
@@ -126,5 +128,5 @@ function pickTmux(userSetting, exists) {
   return ['/opt/homebrew/bin/tmux', '/usr/local/bin/tmux', '/usr/bin/tmux', '/bin/tmux', '/home/linuxbrew/.linuxbrew/bin/tmux'].find(exists) || 'tmux';
 }
 
-module.exports = { newToken, cleanEnv, NAME, WORKING_SECONDS, DEFAULT_SOCKET, DEFAULT_COMMANDS, socketName, commandsFrom, commandName, stateOf, parseSessions, describe,
+module.exports = { sortBy, newToken, cleanEnv, NAME, WORKING_SECONDS, DEFAULT_SOCKET, DEFAULT_COMMANDS, socketName, commandsFrom, commandName, stateOf, parseSessions, describe,
   cleanName, uniqueName, listArgs, attachArgs, createArgs, lookArgs, typeArgs, enterArgs, renameArgs, killArgs, pickTmux };

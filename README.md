@@ -9,7 +9,7 @@ The point of tmux here: **a session keeps running when you close its terminal ta
 ## What you get
 
 - **A list of sessions** with a live dot: filled green while a session is printing output, a bell when it rang the terminal bell, a hollow circle when it is quiet. A count of sessions that rang the bell shows on the sidebar icon.
-- **A list that stays put.** Sessions are listed in the order they were created. Nothing jumps around when one becomes busy or is renamed.
+- **A list that stays put.** Sessions are listed in the order they were created, so nothing jumps around when one becomes busy or is renamed. Prefer alphabetical? Switch to **by name** from the `...` menu of the list.
 - **Click to open** a session as a terminal tab. Click again and the same tab comes to the front.
 - **New Session Here** (the `+` button) starts a session in the folder you have open: a plain shell, or with a command of your choice already running in it.
 - **Rename** and **Kill** from the right-click menu.
@@ -37,6 +37,7 @@ To build the file yourself: `npm run package`.
 |---|---|---|
 | `tmuxSessions.socketName` | `vscode` | Which tmux server to use. A name selects a private server (like `tmux -L <name>`). Empty means your default tmux server, so the list shows the sessions you already have. |
 | `tmuxSessions.newSessionCommands` | Shell, Claude, Claude (continue) | What **New Session Here** offers. Each entry has a `label` and a `command`; the command is typed into the new session. |
+| `tmuxSessions.sortBy` | `created` | Order of the list: `created` (as the sessions were made) or `name`. |
 | `tmuxSessions.hideStatusLine` | `true` | Hide tmux's status line in sessions created here. |
 | `tmuxSessions.refreshSeconds` | `5` | How often the list refreshes while visible. |
 | `tmuxSessions.tmuxPath` | *(auto)* | Absolute path of tmux, if it is somewhere unusual. |
@@ -61,6 +62,7 @@ Example, offering your own tools:
 | Open a session | Click it |
 | Leave it running | Close the terminal tab (or VS Code) |
 | Rename or kill | Right-click the session |
+| Sort by name, or back to creation order | `...` at the top of the list → **Sort by Name / by Creation** |
 | Reach it from a plain terminal | `tmux -L vscode attach -t <name>` |
 | Scroll back | Mouse wheel (tmux's own history, kept while the session lives) |
 | Select text or click a link | Hold Shift (Option on macOS) while you drag or click: the mouse otherwise belongs to tmux |

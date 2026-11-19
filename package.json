@@ -2,7 +2,7 @@
   "name": "tmux-sessions",
   "displayName": "tmux Sessions",
   "description": "A sidebar for your tmux sessions: see which are busy, open one as a terminal, create, rename and kill. Sessions keep running when VS Code closes.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "firasdeveloper",
   "license": "MIT",
   "repository": { "type": "git", "url": "https://github.com/firasdeveloper/tmux-sessions-vscode.git" },
@@ -27,6 +27,7 @@
     "commands": [
       { "command": "tmuxSessions.new", "title": "New Session Here", "category": "tmux Sessions", "icon": "$(add)" },
       { "command": "tmuxSessions.refresh", "title": "Refresh", "category": "tmux Sessions", "icon": "$(refresh)" },
+      { "command": "tmuxSessions.toggleSort", "title": "Sort by Name / by Creation", "category": "tmux Sessions" },
       { "command": "tmuxSessions.open", "title": "Open Session", "category": "tmux Sessions" },
       { "command": "tmuxSessions.rename", "title": "Rename Session…", "category": "tmux Sessions" },
       { "command": "tmuxSessions.kill", "title": "Kill Session…", "category": "tmux Sessions" }
@@ -34,7 +35,8 @@
     "menus": {
       "view/title": [
         { "command": "tmuxSessions.new", "when": "view == tmuxSessions.list", "group": "navigation@1" },
-        { "command": "tmuxSessions.refresh", "when": "view == tmuxSessions.list", "group": "navigation@2" }
+        { "command": "tmuxSessions.refresh", "when": "view == tmuxSessions.list", "group": "navigation@2" },
+        { "command": "tmuxSessions.toggleSort", "when": "view == tmuxSessions.list", "group": "sort@1" }
       ],
       "view/item/context": [
         { "command": "tmuxSessions.open", "when": "view == tmuxSessions.list && viewItem == session", "group": "1@1" },
@@ -58,6 +60,11 @@
           ],
           "items": { "type": "object", "required": ["label", "command"], "properties": { "label": { "type": "string" }, "command": { "type": "string" } } },
           "markdownDescription": "What **New Session Here** offers. `command` is typed into the new session and run; leave it empty for a plain shell. Read from your user settings only, so a folder you open cannot change what gets run."
+        },
+        "tmuxSessions.sortBy": {
+          "type": "string", "enum": ["created", "name"], "default": "created",
+          "enumDescriptions": ["In the order the sessions were created. The list never reshuffles.", "By name, with numbers in order (api-9 before api-10)."],
+          "description": "The order of the session list. Also switchable from the ... menu of the list."
         },
         "tmuxSessions.hideStatusLine": {
           "type": "boolean", "default": true,

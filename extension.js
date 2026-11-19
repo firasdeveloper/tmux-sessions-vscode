@@ -24,7 +24,7 @@ class Sessions {
   constructor() { this.changed = new vscode.EventEmitter(); this.onDidChangeTreeData = this.changed.event; this.items = []; }
   async refresh() {
     const token = L.newToken(), r = await run(L.listArgs(socket(), token));
-    this.items = r.ok ? L.parseSessions(r.out, Date.now() / 1000, token) : [];
+    this.items = r.ok ? L.parseSessions(r.out, Date.now() / 1000, token, vscode.workspace.getConfiguration('tmuxSessions').get('sortBy')) : [];
     this.hidden = r.ok ? this.items.hidden : 0;
     // No server yet simply means no sessions. Any other failure is shown, not passed off as an empty list.
     const noServer = /no server running|error connecting|no sessions|No such file or directory/i.test(r.err);
@@ -152,6 +152,10 @@ function activate(context) {
     vscode.window.onDidCloseTerminal(t => { for (const [id, x] of terminals) if (x === t) terminals.delete(id); refresh(); }),
     vscode.workspace.onDidChangeConfiguration(e => { if (e.affectsConfiguration('tmuxSessions')) poll(); }),
     vscode.commands.registerCommand('tmuxSessions.refresh', refresh),
+    vscode.commands.registerCommand('tmuxSessions.toggleSort', async () => {
+      const cfg = vscode.workspace.getConfiguration('tmuxSessions');
+      await cfg.update('sortBy', L.sortBy(cfg.get('sortBy')) === 'name' ? 'created' : 'name', vscode.ConfigurationTarget.Global); refresh();
+    }),
     vscode.commands.registerCommand('tmuxSessions.new', create),
     vscode.commands.registerCommand('tmuxSessions.open', async s => { const n = await pickSession(s, 'Open which session?'); if (n) await open(n); }),
     vscode.commands.registerCommand('tmuxSessions.rename', rename),

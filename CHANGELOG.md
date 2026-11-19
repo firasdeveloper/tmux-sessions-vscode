@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.0
+
+- The list can be sorted by name instead of by creation: the `...` menu of the list, or the `tmuxSessions.sortBy` setting.
+
 ## 0.2.0
 
 Found in a second review (code, QA and security):
