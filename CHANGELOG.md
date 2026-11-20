@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.0
+
+- A third order for the list: **Last active**, the session you used most recently first (tmux's `session_activity`: when you last typed into it, so a busy program does not reshuffle the list).
+- The sort command is now **Sort Sessions By...** and offers the three orders in a list; `tmuxSessions.sortBy` accepts `active`.
+
 ## 0.3.0
 
 - The list can be sorted by name instead of by creation: the `...` menu of the list, or the `tmuxSessions.sortBy` setting.

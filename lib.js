@@ -9,7 +9,7 @@ const WORKING_SECONDS = 10;
 const DEFAULT_SOCKET = 'vscode';
 // session_id ("$3") is tmux's own number for a session. It never changes, also not when the session is renamed.
 // The two free-text fields (program and folder) come last, so odd characters in them cannot shift the others.
-const FIELDS = ['#{session_id}', '#{session_name}', '#{session_attached}', '#{window_activity}', '#{window_bell_flag}', '#{pane_current_command}', '#{pane_current_path}'];
+const FIELDS = ['#{session_id}', '#{session_name}', '#{session_attached}', '#{window_activity}', '#{window_bell_flag}', '#{session_activity}', '#{pane_current_command}', '#{pane_current_path}'];
 
 /** What "New session" offers when the user has set nothing. `command` is typed into the new session ('' = plain shell). */
 const DEFAULT_COMMANDS = [
@@ -62,22 +62,24 @@ const stateOf = (bell, windowActivity, nowSec) =>
   : Number.isFinite(windowActivity) && nowSec - windowActivity <= WORKING_SECONDS ? 'working'
   : 'quiet';
 
-/** The order of the list: 'created' (the default; it never changes) or 'name'. */
-const sortBy = v => (v === 'name' ? 'name' : 'created');
+/** The orders the list can have. 'active' follows tmux's session_activity: when the session was last used (typed into). */
+const SORTS = [{ id: 'created', label: 'Creation (never reshuffles)' }, { id: 'name', label: 'Name' }, { id: 'active', label: 'Last active (most recent first)' }];
+const sortBy = v => (v === 'name' || v === 'active' ? v : 'created');
 const plain = v => String(v).replace(/[\x00-\x1f\x7f]+/g, ' ').trim();
 /** Parse `tmux list-sessions` output (see listArgs) into sessions, oldest first: tmux numbers sessions as they are
- *  created, so the list keeps its order whatever is busy or renamed; or by name when `order` is 'name'. Rows without this call's token are ignored;
+ *  created, so the list keeps its order whatever is busy or renamed; or by name when `order` is 'name', or last used first when it is 'active'. Rows without this call's token are ignored;
  *  sessions that exist but have a name this extension does not handle are counted in `.hidden`. */
 function parseSessions(out, nowSec, token, order) {
   const sessions = []; let hidden = 0;
   for (const line of String(out).split('\n')) {
-    const [tok, id = '', name = '', attached = '0', winAct = '', bell = '', command = '', ...dir] = line.split('\t');
+    const [tok, id = '', name = '', attached = '0', winAct = '', bell = '', used = '', command = '', ...dir] = line.split('\t');
     if (!token || tok !== token || !/^\$\d+$/.test(id)) continue;
     if (!NAME.test(name)) { hidden++; continue; }
     const wa = winAct.trim() === '' ? NaN : Number(winAct);
-    sessions.push({ id, name, attached: Number(attached) || 0, command: commandName(plain(command)), dir: plain(dir.join('\t')), state: stateOf(bell, wa, nowSec) });
+    sessions.push({ id, name, attached: Number(attached) || 0, used: Number(used) || 0, command: commandName(plain(command)), dir: plain(dir.join('\t')), state: stateOf(bell, wa, nowSec) });
   }
-  sessions.sort(sortBy(order) === 'name' ? (a, b) => a.name.localeCompare(b.name, 'en', { numeric: true }) : (a, b) => Number(a.id.slice(1)) - Number(b.id.slice(1)));
+  const made = (a, b) => Number(a.id.slice(1)) - Number(b.id.slice(1)), by = sortBy(order);
+  sessions.sort(by === 'name' ? (a, b) => a.name.localeCompare(b.name, 'en', { numeric: true }) : by === 'active' ? (a, b) => b.used - a.used || made(a, b) : made);
   sessions.hidden = hidden;
   return sessions;
 }
@@ -128,5 +130,5 @@ function pickTmux(userSetting, exists) {
   return ['/opt/homebrew/bin/tmux', '/usr/local/bin/tmux', '/usr/bin/tmux', '/bin/tmux', '/home/linuxbrew/.linuxbrew/bin/tmux'].find(exists) || 'tmux';
 }
 
-module.exports = { sortBy, newToken, cleanEnv, NAME, WORKING_SECONDS, DEFAULT_SOCKET, DEFAULT_COMMANDS, socketName, commandsFrom, commandName, stateOf, parseSessions, describe,
+module.exports = { SORTS, sortBy, newToken, cleanEnv, NAME, WORKING_SECONDS, DEFAULT_SOCKET, DEFAULT_COMMANDS, socketName, commandsFrom, commandName, stateOf, parseSessions, describe,
   cleanName, uniqueName, listArgs, attachArgs, createArgs, lookArgs, typeArgs, enterArgs, renameArgs, killArgs, pickTmux };

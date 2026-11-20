@@ -55,18 +55,21 @@ test('stateOf: a bell is attention, recent output is working, otherwise quiet', 
 });
 
 test('parseSessions: reads the fields, skips odd names, keeps the order of creation (so the list never reshuffles)', () => {
-  const out = ['T\t$10\tweb-10\t0\t0\t0\tzsh\t/x/web', 'T\t$9\tweb-2\t1\t995\t0\t2.1.3\t/x/web', 'T\t$2\tbad name\t0\t0\t0\tzsh\t/x', 'T\tx\tnoid\t0\t0\t0\tzsh\t/x', 'T\t$3\tapi\t0\t0\t1\tnode\t/x/api/', ''].join('\n');
+  const out = ['T\t$10\tweb-10\t0\t0\t0\t0\tzsh\t/x/web', 'T\t$9\tweb-2\t1\t995\t0\t0\t2.1.3\t/x/web', 'T\t$2\tbad name\t0\t0\t0\t0\tzsh\t/x', 'T\tx\tnoid\t0\t0\t0\t0\tzsh\t/x', 'T\t$3\tapi\t0\t0\t1\t0\tnode\t/x/api/', ''].join('\n');
   const s = L.parseSessions(out, 1000, 'T');
   assert.equal(s.hidden, 1, 'a session that exists but cannot be shown is counted');
   assert.deepEqual(s.map(x => x.name), ['api', 'web-2', 'web-10']);   // ids $3, $9, $10: oldest first, numerically
-  assert.deepEqual(s[1], { id: '$9', name: 'web-2', attached: 1, command: 'claude', dir: '/x/web', state: 'working' });
+  assert.deepEqual(s[1], { id: '$9', name: 'web-2', attached: 1, used: 0, command: 'claude', dir: '/x/web', state: 'working' });
   assert.equal(s[0].state, 'attention');
   assert.equal(L.describe(s[0]), 'node · api');
   assert.deepEqual(L.parseSessions(out, 1000, 'T', 'name').map(x => x.name), ['api', 'web-2', 'web-10']);
-  const mixed = ['T\t$1\tzeta\t0\t0\t0\tzsh\t/x', 'T\t$2\talpha-10\t0\t0\t0\tzsh\t/x', 'T\t$3\talpha-9\t0\t0\t0\tzsh\t/x'].join('\n');
+  const mixed = ['T\t$1\tzeta\t0\t0\t0\t0\tzsh\t/x', 'T\t$2\talpha-10\t0\t0\t0\t0\tzsh\t/x', 'T\t$3\talpha-9\t0\t0\t0\t0\tzsh\t/x'].join('\n');
   assert.deepEqual(L.parseSessions(mixed, 1000, 'T').map(x => x.name), ['zeta', 'alpha-10', 'alpha-9'], 'default: as created');
   assert.deepEqual(L.parseSessions(mixed, 1000, 'T', 'name').map(x => x.name), ['alpha-9', 'alpha-10', 'zeta'], 'by name, numbers in order');
-  assert.deepEqual([L.sortBy('name'), L.sortBy('created'), L.sortBy('x'), L.sortBy(undefined)], ['name', 'created', 'created', 'created']);
+  assert.deepEqual([L.sortBy('name'), L.sortBy('created'), L.sortBy('active'), L.sortBy('x'), L.sortBy(undefined)], ['name', 'created', 'active', 'created', 'created']);
+  const used = ['T\t$1\told\t0\t0\t0\t500\tzsh\t/x', 'T\t$2\tfresh\t0\t0\t0\t900\tzsh\t/x', 'T\t$3\tnever\t0\t0\t0\t\tzsh\t/x', 'T\t$4\ttie\t0\t0\t0\t500\tzsh\t/x'].join('\n');
+  assert.deepEqual(L.parseSessions(used, 1000, 'T', 'active').map(x => x.name), ['fresh', 'old', 'tie', 'never'], 'last used first; ties and unknown in order of creation');
+  assert.deepEqual(L.SORTS.map(o => o.id), ['created', 'name', 'active']);
   assert.deepEqual([...L.parseSessions('', 1000, 'T')], []);
 });
 
@@ -137,7 +140,7 @@ test('against real tmux: a folder name with tmux format characters is taken lite
 test('a folder or program name cannot forge rows in the list: only lines that start with this call\'s token count', () => {
   const tok = L.newToken(); assert.match(tok, /^[a-f0-9]{16,}$/); assert.notEqual(tok, L.newToken());
   // a real session whose folder name contains a newline and a made-up record, and one with a tab in its folder name
-  const out = [`${tok}\t$0\treal\t0\t0\t0\tzsh\t/x/evil`, '$99\tforged\t0\t0\t1\tzsh\t/tmp', `nottok\t$98\talso-forged\t0\t0\t1\tzsh\t/tmp`, `${tok}\t$1\ttabby\t0\t0\t0\tzsh\t/x/tab\tdir`].join('\n');
+  const out = [`${tok}\t$0\treal\t0\t0\t0\t0\tzsh\t/x/evil`, '$99\tforged\t0\t0\t1\t0\tzsh\t/tmp', `nottok\t$98\talso-forged\t0\t0\t1\t0\tzsh\t/tmp`, `${tok}\t$1\ttabby\t0\t0\t0\t0\tzsh\t/x/tab\tdir`].join('\n');
   const s = L.parseSessions(out, 1000, tok);
   assert.deepEqual(s.map(x => x.name), ['real', 'tabby']);
   assert.equal(s[1].dir, '/x/tab dir', 'control characters are never shown');

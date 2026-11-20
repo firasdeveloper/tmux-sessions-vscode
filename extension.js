@@ -153,8 +153,10 @@ function activate(context) {
     vscode.workspace.onDidChangeConfiguration(e => { if (e.affectsConfiguration('tmuxSessions')) poll(); }),
     vscode.commands.registerCommand('tmuxSessions.refresh', refresh),
     vscode.commands.registerCommand('tmuxSessions.toggleSort', async () => {
-      const cfg = vscode.workspace.getConfiguration('tmuxSessions');
-      await cfg.update('sortBy', L.sortBy(cfg.get('sortBy')) === 'name' ? 'created' : 'name', vscode.ConfigurationTarget.Global); refresh();
+      const cfg = vscode.workspace.getConfiguration('tmuxSessions'), now = L.sortBy(cfg.get('sortBy'));
+      const choice = await vscode.window.showQuickPick(L.SORTS.map(o => ({ label: o.label, description: o.id === now ? 'current' : '', id: o.id })), { placeHolder: 'Order of the session list' });
+      if (!choice) return;
+      await cfg.update('sortBy', choice.id, vscode.ConfigurationTarget.Global); refresh();
     }),
     vscode.commands.registerCommand('tmuxSessions.new', create),
     vscode.commands.registerCommand('tmuxSessions.open', async s => { const n = await pickSession(s, 'Open which session?'); if (n) await open(n); }),
